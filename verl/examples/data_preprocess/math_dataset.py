@@ -30,30 +30,61 @@ def extract_solution(solution_str):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--local_dir', default='~/data/math')
+    parser.add_argument('--local_dir', default='~/deepscaler/data/math_stratos_scale')
     parser.add_argument('--hdfs_dir', default=None)
 
     args = parser.parse_args()
 
-    data_source = 'lighteval/MATH'
-
+    data_source = 'mlfoundations-dev/math_stratos_scale'
+    print(f"Loading the {data_source} dataset from huggingface...", flush=True)
     dataset = datasets.load_dataset(data_source, trust_remote_code=True)
 
-    train_dataset = dataset['train']
-    test_dataset = dataset['test']
+    # First pass: Filter valid examples
+    def validate_example(example):
+        try:
+            answer = example['solution']
+            solution = extract_solution(answer)
+            return True
+        except Exception as e:
+            return False
+
+    # Get initial stats
+    total_examples = len(dataset['train'])
+    print(f"Initial dataset size: {total_examples}")
+
+    # Filter valid examples
+    filtered_dataset = dataset['train'].filter(validate_example)
+    valid_examples = len(filtered_dataset)
+    print(f"Valid examples after filtering: {valid_examples}")
+    print(f"Removed {total_examples - valid_examples} examples")
+
+    # Second pass: Split into train/test
+    if 'test' in dataset:
+        # Use existing test set if available
+        train_dataset = dataset['train']
+        test_dataset = dataset['test']
+    else:
+        # If no test set, just use train set as is
+        train_dataset = filtered_dataset
+        test_dataset = None
+
+    print(f"Final train set size: {len(train_dataset)}")
+    if test_dataset:
+        print(f"Final test set size: {len(test_dataset)}")
+    else:
+        print("No test set available")
 
     instruction_following = "Let's think step by step and output the final answer within \\boxed{}."
 
-    # add a row to each data item that represents a unique id
+    # Continue with the existing processing...
     def make_map_fn(split):
-
         def process_fn(example, idx):
             question = example.pop('problem')
-
             question = question + ' ' + instruction_following
 
             answer = example.pop('solution')
             solution = extract_solution(answer)
+            
             data = {
                 "data_source": data_source,
                 "prompt": [{
@@ -71,19 +102,20 @@ if __name__ == '__main__':
                 }
             }
             return data
-
         return process_fn
 
+    # Process the datasets
     train_dataset = train_dataset.map(function=make_map_fn('train'), with_indices=True)
-    test_dataset = test_dataset.map(function=make_map_fn('test'), with_indices=True)
+    if test_dataset:
+        test_dataset = test_dataset.map(function=make_map_fn('test'), with_indices=True)
 
     local_dir = args.local_dir
     hdfs_dir = args.hdfs_dir
 
     train_dataset.to_parquet(os.path.join(local_dir, 'train.parquet'))
-    test_dataset.to_parquet(os.path.join(local_dir, 'test.parquet'))
+    if test_dataset:
+        test_dataset.to_parquet(os.path.join(local_dir, 'test.parquet'))
 
     if hdfs_dir is not None:
         makedirs(hdfs_dir)
-
         copy(src=local_dir, dst=hdfs_dir)

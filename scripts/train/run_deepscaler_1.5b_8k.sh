@@ -26,7 +26,7 @@ fi
 # Train over a single node, 8 A100-80GB GPUs.
 python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=grpo \
-    data.train_files=$HOME/deepscaler/data/train.parquet \
+    data.train_files=$HOME/deepscaler/data/math_stratos_scale/train.parquet \
     data.val_files=$HOME/deepscaler/data/aime.parquet \
     data.train_batch_size=128 \
     data.val_batch_size=512 \
@@ -61,8 +61,8 @@ python3 -m verl.trainer.main_ppo \
     trainer.experiment_name='deepscaler-1.5b-8k' \
     +trainer.val_before_train=True \
     trainer.n_gpus_per_node=8 \
-    trainer.nnodes=1 \
-    trainer.save_freq=20 \
-    trainer.test_freq=20 \
+    trainer.nnodes=2 \
+    trainer.save_freq=1 \
+    trainer.test_freq=1 \
     trainer.default_hdfs_dir=null \
     trainer.total_epochs=30 "${@:1}"
