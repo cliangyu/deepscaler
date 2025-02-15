@@ -151,3 +151,8 @@ To replicate our reported numbers for `DeepScaleR-1.5B-Preview`, run:
   year={2025}
 }
 ```
+
+
+## Our Runs
+1. Cosine reward [source](https://arxiv.org/abs/2502.03373). Cosine reward without length penalty runs on hydra1.
+2. Throughput configuration. 

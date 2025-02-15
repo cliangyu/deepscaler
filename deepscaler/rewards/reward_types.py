@@ -5,11 +5,22 @@ to evaluate model responses for various problem types, including math and coding
 
 from dataclasses import dataclass, field
 from enum import Enum
+import math
 
 @dataclass
 class RewardConfig:
     # Use LLM as ORM to evaluate correctness.
     use_math_orm: bool = False
+    
+    # Use cosine annealing reward
+    use_cosine_reward: bool = True
+    
+    # Cosine reward parameters
+    max_token_length: int = 16384  # Maximum token length for cosine calculation
+    correct_cosine_max: float = 4.0  # Maximum reward for correct answers
+    correct_cosine_min: float = 0.0  # Minimum reward for correct answers
+    incorrect_cosine_max: float = -8.0  # Maximum penalty for incorrect answers
+    incorrect_cosine_min: float = 0.0  # Minimum penalty for incorrect answers
     
     # General reward constants.
     correct_reward: float = 1.0

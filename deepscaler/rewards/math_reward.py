@@ -4,6 +4,7 @@ and assigns rewards based on their correctness. It utilizes a language model to
 validate answers when necessary.
 """
 from typing import List, Union
+import math
 
 from deepscaler.globals import THOUGHT_DELIMITER_START, THOUGHT_DELIMITER_END, OAI_RM_MODEL
 from deepscaler.rewards import RewardConfig, RewardFn, RewardInput, RewardOutput, RewardType
@@ -25,6 +26,49 @@ class RewardMathFn(RewardFn):
     the reward based on the correctness of the provided answer compared to the ground truth.
     """
 
+    def calculate_cosine_reward(self, is_correct: bool, token_length: int) -> float:
+        """
+        Calculate the cosine annealing reward based on the solution length and correctness.
+        
+        Args:
+            is_correct (bool): Whether the answer is correct
+            token_length (int): Length of the solution in tokens
+            
+        Returns:
+            float: The calculated cosine reward
+        """
+        print(f"\n=== Cosine Reward Calculation ===")
+        print(f"Input - is_correct: {is_correct}, token_length: {token_length}")
+        
+        # Clamp token length to max length
+        original_length = token_length
+        token_length = min(token_length, self.config.max_token_length)
+        if original_length != token_length:
+            print(f"Token length clamped from {original_length} to {token_length}")
+        
+        # Calculate progress from 0 to 1 based on token length
+        progress = token_length / self.config.max_token_length
+        print(f"Progress (0 to 1): {progress:.4f}")
+        
+        # Calculate cosine value (ranges from 1 to 0)
+        cosine_value = math.cos(progress * math.pi / 2)
+        print(f"Cosine value (1 to 0): {cosine_value:.4f}")
+        
+        if is_correct:
+            # For correct answers: cosine from max to min (4 to 0)
+            reward_range = self.config.correct_cosine_max - self.config.correct_cosine_min
+            reward = self.config.correct_cosine_min + (reward_range * cosine_value)
+            print(f"Correct answer - Range: {self.config.correct_cosine_max} to {self.config.correct_cosine_min}")
+            print(f"Final reward: {reward:.4f}")
+        else:
+            # For incorrect answers: cosine from max to min (-8 to 0)
+            reward_range = self.config.incorrect_cosine_max - self.config.incorrect_cosine_min
+            reward = self.config.incorrect_cosine_min + (reward_range * cosine_value)
+            print(f"Incorrect answer - Range: {self.config.incorrect_cosine_max} to {self.config.incorrect_cosine_min}")
+            print(f"Final reward: {reward:.4f}")
+        print("===============================\n")
+        return reward
+
     def __call__(self, input: RewardInput) -> RewardOutput:
         assert input.problem_type == RewardType.MATH, \
             "Invalid problem type: expected 'MATH', but got '{}'".format(input.problem_type)
@@ -36,16 +80,22 @@ class RewardMathFn(RewardFn):
         if THOUGHT_DELIMITER_START in model_response and THOUGHT_DELIMITER_END in model_response:
             model_solution = model_response.split(THOUGHT_DELIMITER_END)[1]
         else:
-            return RewardOutput(reward=self.config.format_error_reward, is_correct=False)
+            error_reward = self.config.incorrect_cosine_max if self.config.use_cosine_reward else self.config.format_error_reward
+            print(f"Format error - Using {'cosine max penalty' if self.config.use_cosine_reward else 'standard penalty'}: {error_reward}")
+            return RewardOutput(reward=error_reward, is_correct=False)
         
         model_answer = extract_answer(model_solution)
         if model_answer is None:
-            return RewardOutput(reward=self.config.format_error_reward, is_correct=False)
+            error_reward = self.config.incorrect_cosine_max if self.config.use_cosine_reward else self.config.format_error_reward
+            print(f"Answer extraction failed - Using {'cosine max penalty' if self.config.use_cosine_reward else 'standard penalty'}: {error_reward}")
+            return RewardOutput(reward=error_reward, is_correct=False)
 
         # Process the ground truth(s)
         ground_truths = input.ground_truth.get("answer", None)
         if ground_truths is None:
-            return RewardOutput(reward=self.config.unk_error_reward, is_correct=False)
+            error_reward = self.config.incorrect_cosine_max if self.config.use_cosine_reward else self.config.unk_error_reward
+            print(f"No ground truth - Using {'cosine max penalty' if self.config.use_cosine_reward else 'standard penalty'}: {error_reward}")
+            return RewardOutput(reward=error_reward, is_correct=False)
         
         # Convert single answer to list for uniform processing
         if isinstance(ground_truths, (str, float, int)):
@@ -63,16 +113,26 @@ class RewardMathFn(RewardFn):
                 processed_ground_truths.append(truth)
         
         if not processed_ground_truths:
-            return RewardOutput(reward=self.config.unk_error_reward, is_correct=False)
+            error_reward = self.config.incorrect_cosine_max if self.config.use_cosine_reward else self.config.unk_error_reward
+            print(f"No processed ground truths - Using {'cosine max penalty' if self.config.use_cosine_reward else 'standard penalty'}: {error_reward}")
+            return RewardOutput(reward=error_reward, is_correct=False)
 
         # Check against all possible correct answers
         for ground_truth in processed_ground_truths:
             is_correct = grade_answer_mathd(model_answer, ground_truth) or grade_answer_sympy(model_answer, ground_truth)
             if is_correct:
-                return RewardOutput(reward=self.config.correct_reward, is_correct=True)
+                if hasattr(input, 'solution_tokens') and self.config.use_cosine_reward:
+                    print(f"\nCalculating cosine reward for correct answer")
+                    print(f"Solution tokens length: {len(input.solution_tokens)}")
+                    reward = self.calculate_cosine_reward(True, len(input.solution_tokens))
+                else:
+                    reward = self.config.correct_reward
+                    print(f"\nUsing standard correct reward: {reward}")
+                return RewardOutput(reward=reward, is_correct=True)
 
         # If latex heuristics fail and ORM is enabled, use LLM as ORM to evaluate correctness
         if self.config.use_math_orm:
+            print("\nAttempting LLM-based evaluation...")
             for ground_truth in processed_ground_truths:
                 try:
                     orm_response = call_gemini_llm(
@@ -82,9 +142,16 @@ class RewardMathFn(RewardFn):
                     )
 
                     if "[[YES]]" in orm_response:
-                        return RewardOutput(reward=self.config.correct_reward, is_correct=True)
+                        if hasattr(input, 'solution_tokens') and self.config.use_cosine_reward:
+                            print(f"\nLLM evaluation successful - Calculating cosine reward for correct answer")
+                            print(f"Solution tokens length: {len(input.solution_tokens)}")
+                            reward = self.calculate_cosine_reward(True, len(input.solution_tokens))
+                        else:
+                            reward = self.config.correct_reward
+                            print(f"\nLLM evaluation successful - Using standard correct reward: {reward}")
+                        return RewardOutput(reward=reward, is_correct=True)
                 except Exception as e:
-                    print ("Error calling Gemini ORM, trying OAI RM")
+                    print(f"\nError calling Gemini ORM: {str(e)}, trying OAI RM")
                     orm_response = call_oai_rm_llm(
                         system_prompt=ORM_PROMPT,
                         prompt=ORM_USER_TEMPLATE.format(problem=problem, answer_1=model_answer, answer_2=ground_truth),
@@ -93,20 +160,69 @@ class RewardMathFn(RewardFn):
                     )
                     
                     if "[[YES]]" in orm_response:
-                        return RewardOutput(reward=self.config.correct_reward, is_correct=True)
+                        if hasattr(input, 'solution_tokens') and self.config.use_cosine_reward:
+                            print(f"\nOAI RM evaluation successful - Calculating cosine reward for correct answer")
+                            print(f"Solution tokens length: {len(input.solution_tokens)}")
+                            reward = self.calculate_cosine_reward(True, len(input.solution_tokens))
+                        else:
+                            reward = self.config.correct_reward
+                            print(f"\nOAI RM evaluation successful - Using standard correct reward: {reward}")
+                        return RewardOutput(reward=reward, is_correct=True)
                     continue
-                
-        return RewardOutput(reward=self.config.incorrect_reward, is_correct=False)
+        
+        if hasattr(input, 'solution_tokens') and self.config.use_cosine_reward:
+            print(f"\nCalculating cosine reward for incorrect answer")
+            print(f"Solution tokens length: {len(input.solution_tokens)}")
+            reward = self.calculate_cosine_reward(False, len(input.solution_tokens))
+        else:
+            reward = self.config.incorrect_reward
+            print(f"\nUsing standard incorrect reward: {reward}")
+        return RewardOutput(reward=reward, is_correct=False)
 
-def deepscaler_reward_fn(solution_str: str, ground_truth: Union[str, List[str]], enable_llm = False):
+def deepscaler_reward_fn(
+    solution_str: str, 
+    solution_tokens: List[int], 
+    ground_truth: Union[str, List[str]], 
+    enable_llm: bool = False,
+    use_cosine_reward: bool = False
+):
+    """
+    Helper function to evaluate mathematical solutions with configurable reward settings.
+    
+    Args:
+        solution_str (str): The solution string to evaluate
+        solution_tokens (List[int]): List of token IDs in the solution
+        ground_truth (Union[str, List[str]]): The correct answer(s)
+        enable_llm (bool): Whether to use LLM for evaluation
+        use_cosine_reward (bool): Whether to use cosine annealing reward
+        
+    Returns:
+        bool: Whether the answer is correct
+    """
     reward_config = RewardConfig()
     reward_config.use_math_orm = enable_llm
+    reward_config.use_cosine_reward = use_cosine_reward
     reward_fn = RewardMathFn(reward_config)
-    reward_response = reward_fn(RewardInput(problem=solution_str, problem_type=RewardType.MATH, model_response=solution_str, ground_truth={"answer": ground_truth}))
+    
+    reward_input = RewardInput(
+        problem=solution_str, 
+        problem_type=RewardType.MATH, 
+        model_response=solution_str, 
+        ground_truth={"answer": ground_truth}
+    )
+    # Add solution_tokens as an attribute for cosine reward calculation
+    setattr(reward_input, 'solution_tokens', solution_tokens)
+    
+    reward_response = reward_fn(reward_input)
     return reward_response.is_correct
 
 if __name__ == "__main__":
-    reward = RewardMathFn(RewardConfig)
-    input = RewardInput(problem="Let $P(x)=x^{4}+2 x^{3}-13 x^{2}-14 x+24$ be a polynomial with roots $r_{1}, r_{2}, r_{3}, r_{4}$. Let $Q$ be the quartic polynomial with roots $r_{1}^{2}, r_{2}^{2}, r_{3}^{2}, r_{4}^{2}$, such that the coefficient of the $x^{4}$ term of $Q$ is 1. Simplify the quotient $Q\\left(x^{2}\\right) / P(x)$, leaving your answer in terms of $x$. (You may assume that $x$ is not equal to any of $\\left.r_{1}, r_{2}, r_{3}, r_{4}\\right)$.", problem_type=RewardType.MATH, model_response="<think> I am omniscient. </think> The answer is \\boxed{24 + 14*x + (-13)*x^2 - 2*x^3 + x^4}.", ground_truth={"answer": ["10", "$x^{4}-2 x^{3}-13 x^{2}+14 x+24$"]})
+    reward = RewardMathFn(RewardConfig())
+    input = RewardInput(
+        problem="Let $P(x)=x^{4}+2 x^{3}-13 x^{2}-14 x+24$ be a polynomial with roots $r_{1}, r_{2}, r_{3}, r_{4}$. Let $Q$ be the quartic polynomial with roots $r_{1}^{2}, r_{2}^{2}, r_{3}^{2}, r_{4}^{2}$, such that the coefficient of the $x^{4}$ term of $Q$ is 1. Simplify the quotient $Q\\left(x^{2}\\right) / P(x)$, leaving your answer in terms of $x$. (You may assume that $x$ is not equal to any of $\\left.r_{1}, r_{2}, r_{3}, r_{4}\\right)$.", 
+        problem_type=RewardType.MATH, 
+        model_response="<think> I am omniscient. </think> The answer is \\boxed{24 + 14*x + (-13)*x^2 - 2*x^3 + x^4}.", 
+        ground_truth={"answer": ["10", "$x^{4}-2 x^{3}-13 x^{2}+14 x+24$"]}
+    )
     output = reward(input)
     print(output)

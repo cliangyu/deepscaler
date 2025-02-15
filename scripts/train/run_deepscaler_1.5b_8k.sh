@@ -58,11 +58,12 @@ python3 -m verl.trainer.main_ppo \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
     trainer.project_name='deepscaler' \
-    trainer.experiment_name='deepscaler-1.5b-8k' \
-    +trainer.val_before_train=True \
+    trainer.experiment_name='deepscaler-1.5b-8k-cosine-reward' \
+    +trainer.val_before_train=False \
     trainer.n_gpus_per_node=8 \
-    trainer.nnodes=2 \
-    trainer.save_freq=1 \
-    trainer.test_freq=1 \
+    trainer.nnodes=1 \
+    actor_rollout_ref.rollout.disable_log_stats=False \
+    trainer.save_freq=20 \
+    trainer.test_freq=20 \
     trainer.default_hdfs_dir=null \
     trainer.total_epochs=30 "${@:1}"
