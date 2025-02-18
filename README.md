@@ -156,3 +156,4 @@ To replicate our reported numbers for `DeepScaleR-1.5B-Preview`, run:
 ## Our Runs
 1. Cosine reward [source](https://arxiv.org/abs/2502.03373). Cosine reward without length penalty runs on hydra1.
 2. Throughput configuration. 
+3. Data. hydra2 runs stratos data. hydra3 runs the deepscaler train data.

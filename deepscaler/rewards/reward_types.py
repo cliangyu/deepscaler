@@ -5,7 +5,7 @@ to evaluate model responses for various problem types, including math and coding
 
 from dataclasses import dataclass, field
 from enum import Enum
-import math
+from typing import List
 
 @dataclass
 class RewardConfig:
@@ -59,6 +59,7 @@ class RewardInput:
     model_response: str
     problem_type: RewardType = RewardType.UNK
     ground_truth: dict = field(default_factory=dict)
+    solution_tokens: List[int] = field(default_factory=list)
 
 
 @dataclass

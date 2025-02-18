@@ -73,6 +73,8 @@ class RewardMathFn(RewardFn):
         assert input.problem_type == RewardType.MATH, \
             "Invalid problem type: expected 'MATH', but got '{}'".format(input.problem_type)
         
+        self.config.use_cosine_reward = True # TODO: remove this harcode 
+        
         problem = input.problem
         model_response = input.model_response
         

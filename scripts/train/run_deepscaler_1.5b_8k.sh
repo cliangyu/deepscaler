@@ -4,6 +4,7 @@ set -x
 # Warning: Export VLLM_ATTENTION_BACKEND on every machine before starting Ray cluster.
 # vLLM without XFORMERS will results in CUDA errors.
 export VLLM_ATTENTION_BACKEND=XFORMERS
+export NCCL_SOCKET_IFNAME=ibs1
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -62,7 +63,6 @@ python3 -m verl.trainer.main_ppo \
     +trainer.val_before_train=False \
     trainer.n_gpus_per_node=8 \
     trainer.nnodes=1 \
-    actor_rollout_ref.rollout.disable_log_stats=False \
     trainer.save_freq=20 \
     trainer.test_freq=20 \
     trainer.default_hdfs_dir=null \
