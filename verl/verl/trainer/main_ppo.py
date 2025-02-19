@@ -109,7 +109,7 @@ import hydra
 def main(config):
     if not ray.is_initialized():
         # this is for local ray cluster
-        ray.init(runtime_env={'env_vars': {'TOKENIZERS_PARALLELISM': 'true', 'NCCL_DEBUG': 'WARN'}})
+        ray.init(runtime_env={'env_vars': {'TOKENIZERS_PARALLELISM': 'true', 'NCCL_DEBUG': 'WARN', 'NCCL_SOCKET_IFNAME': 'ibs1', 'GLOO_SOCKET_IFNAME': 'ibs1', 'VLLM_ATTENTION_BACKEND': 'XFORMERS'}}) # Hard-coded for hydra-host cluster
 
     ray.get(main_task.remote(config))
 
