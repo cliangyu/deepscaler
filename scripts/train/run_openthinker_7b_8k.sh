@@ -20,7 +20,7 @@ done
 
 # Set default model path if not provided
 if [ -z "$MODEL_PATH" ]; then
-    MODEL_PATH="mlfoundations-dev/32b_add_verified_extra_unverified"
+    MODEL_PATH="mlfoundations-dev/stratos_verified_mix_epochs5"
 fi
 
 # Train over a single node, 8 A100-80GB GPUs.
@@ -47,7 +47,7 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.actor.fsdp_config.param_offload=False \
     actor_rollout_ref.actor.fsdp_config.grad_offload=False \
     actor_rollout_ref.actor.fsdp_config.optimizer_offload=False \
-    actor_rollout_ref.rollout.tensor_model_parallel_size=4 \
+    actor_rollout_ref.rollout.tensor_model_parallel_size=2 \
     actor_rollout_ref.rollout.name=vllm \
     actor_rollout_ref.rollout.temperature=0.6 \
     actor_rollout_ref.rollout.val_temperature=0.6 \
@@ -59,7 +59,7 @@ python3 -m verl.trainer.main_ppo \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
     trainer.project_name='deepscaler' \
-    trainer.experiment_name='openthinker-32b-8k-vanilla-4nodes' \
+    trainer.experiment_name='openthinker-7b-8k-vanilla-4nodes' \
     +trainer.val_before_train=True \
     trainer.n_gpus_per_node=8 \
     trainer.nnodes=4 \
